@@ -9,5 +9,5 @@ There are 5 of them which consist in :
 - Method_comp.R that produces the indicators measuring the performance on the models. It is also the script where we cluster the rivers and compare the efficiency of the methods on the different clusters. This file relies on the .Rdata files produced by the three first scripts.
 - the raster can be found at the following link : https://www.earthdata.nasa.gov/sensors/srtm
 - the navigation endpoints shapefile can be found in the empirical_endpoints folder.
-- the shapefile of riverpoints located before the confluence can be found in the partsection_riverpoints folder.
-- the shapefile of all the riverpoints from source to sea can be found in the fullsection_riverpoints folder. 
+- the shapefile of the riverpoints from the source to the confluence can be found in the partsection_riverpoints folder.
+- the shapefile of the riverpoints from the source to the sea can be found in the fullsection_riverpoints folder. 
