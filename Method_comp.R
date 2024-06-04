@@ -5,6 +5,8 @@ library(gridExtra)
 library(tidyr)
 library(dtw)
 library(raster)
+library(xtable)
+library(rlist)
 library(osmdata) 
 library(transport)
 library(data.table)
@@ -73,12 +75,13 @@ global_indic <- tab %>% group_by(meth) %>% summarize(CP1_prec_mean = mean(Prec_2
 
 load("fullsection_w_constraint.Rdata") # file produced by the fullsection_w_constraint.R script
 L_key <- which(unique(RES$rivers) %in% comp_points$Nom.riv)
-river_names <- unique(RES$rivers)[L_key]
+river_names_cal <- unique(RES$rivers)[L_key]
+river_names_all <- unique(RES$rivers)
 
 # creating a table with elevation points of each river located upstream of the highest confluence point 
 
-ntab <- table_points %>% filter(name == river_names[1],Z >= conf_points$Z[conf_points$Name == river_names[1]])
-for(i in river_names[-1])
+ntab <- table_points %>% filter(name == river_names_all[1],Z >= conf_points$Z[conf_points$Name == river_names_all[1]])
+for(i in river_names_all[-1])
 {
   if(i %in% conf_points$Name)
   {
@@ -94,21 +97,26 @@ rm(temp)
 
 # smoothing step of the elevation profiles 
 
-SMR <- as.list(rep(NA,length(river_names))) #L_key
+SMR <- as.list(rep(NA,length(river_names_all))) #L_key
+t_t <- rep(NA,length(river_names_all))
 for(i in 1:length(SMR))
 {
-    pos <- which(ntab$name == river_names[i])
-    SMR[[i]] <- smooth.spline(x = seq(0,1,length.out = length(pos)),y = (ntab$Z[pos]-min(ntab$Z[pos]))/(max(ntab$Z[pos])-min(ntab$Z[pos])),df = 6)
+    pos <- which(ntab$name == river_names_all[i])
+    SMR[[i]] <- smooth.spline(x = seq(0,length(pos)-1,length.out = length(pos)),y = ntab$Z[pos],df = 58)
+    t_t[i] <- max(SMR[[i]]$y)/max(ntab$Z[pos])
+    # SMR[[i]] <- smooth.spline(x = seq(0,1,length.out = length(pos)),y = (ntab$Z[pos]-min(ntab$Z[pos]))/(max(ntab$Z[pos])-min(ntab$Z[pos])),df = 58)
+    SMR[[i]]$y <- (SMR[[i]]$y-min(SMR[[i]]$y))/(max(SMR[[i]]$y)-min(SMR[[i]]$y))
 }
 
 # preparing the elvation profiles that we are going to cluster and
 # storing them into a matrix
 
-M_traj <- matrix(NA,nrow = length(river_names),ncol = 1000) 
-for(i in 1:length(river_names)) 
+names(SMR) <- river_names_all
+M_traj <- matrix(NA,nrow = length(river_names_all),ncol = 1000) 
+for(i in 1:length(river_names_all)) 
 {
-  pos <- which(ntab$name == river_names[i])
-  M_traj[i,] <- SMR[[i]]$y[round(seq(1,length(pos),length.out = 1000))]
+  pos <- which(ntab$name == river_names_all[i])
+  M_traj[i,] <- SMR[[which(names(SMR) == river_names_all[i])]]$y[round(seq(1,length(pos),length.out = 1000))]
 }
 
 # performing the clustering and formatting the results
@@ -116,18 +124,21 @@ for(i in 1:length(river_names))
 res_clust <- fdahclust(x = seq(0,1,length.out = 1000),
                        y = M_traj,
                        n_clusters = 5,
-                       warping_class = "affine")
+                       warping_class = "affine",
+                       cluster_on_phase = TRUE,
+                       linkage_criterion = "ward.D2")
 summary(as.factor(res_clust$memberships))
-names(res_clust$memberships) <- river_names
+names(res_clust$memberships) <- river_names_all
+summary(as.factor(res_clust$memberships[names(res_clust$memberships) %in% river_names_cal]))
 
-# preparing the data needed to plot the clustering results with ggplot2 
+# preparing data to plot the clustering results
 
 orig_curve <- as.data.frame(apply(res_clust$original_curves, 1, c))
 orig_grid <- as.data.frame(apply(res_clust$original_grids, 1, c))
 align_grid <- as.data.frame(apply(res_clust$aligned_grids, 1, c))
-colnames(orig_curve) <- river_names
-colnames(orig_grid) <- river_names
-colnames(align_grid) <- river_names
+colnames(orig_curve) <- river_names_all
+colnames(orig_grid) <- river_names_all
+colnames(align_grid) <- river_names_all
 orig_curve <- orig_curve %>% 
   pivot_longer(cols = 1:ncol(orig_curve)) %>% 
   arrange(name)
@@ -163,13 +174,25 @@ G2 <- ggplot(data = orig_curve)+
   scale_color_discrete("Cluster")+theme(legend.position = "bottom")
 
 G <- (G1/G2)+
-  plot_layout(guides = "collect")&theme(legend.position = "bottom",text = element_text(size = 7))
+  plot_layout(guides = "collect")&theme(legend.position = "bottom",text = element_text(size = 16))
 
-ggsave(filename = "clustering.pdf",plot = G,device = "pdf",width = 8,height = 5)
+ggsave(filename = "clustering.pdf",plot = G,device = "pdf",width = 19,height = 12)
 
 # preparing the table with the indicators statistics to compare the methods across the clusters
 
-tab$clust_shape <- rep(res_clust$memberships,3)
+col_clust <- res_clust$memberships[names(res_clust$memberships) %in% river_names_cal]
+tab$clust_shape <- rep(col_clust,3)
+h_tab <- tab %>% filter(Name %in% river_names_cal & meth == 3)
+h_tab <- h_tab %>% select(Name,Prec_up2up_M2,Prec_low2low_M2,Pts_order_M2,Pts_order_M2,char_max_length,clust_shape)
+h_tab$Prec_up2up_M2_rel <- round(h_tab$Prec_up2up_M2/unlist(h_tab$char_max_length)*100,2)
+h_tab$Prec_low2low_M2_rel <- round(h_tab$Prec_low2low_M2/unlist(h_tab$char_max_length)*100,2)
+h_tab$Prez_up <- paste(as.character(h_tab$Prec_up2up_M2)," (",as.character(h_tab$Prec_up2up_M2_rel)," %)", sep = "")
+h_tab$Prez_down <- paste(as.character(h_tab$Prec_low2low_M2)," (",as.character(h_tab$Prec_low2low_M2_rel)," %)", sep = "")
+h_tab <- h_tab %>% select(Name,Prez_up,Prez_down,Pts_order_M2,clust_shape)
+h_tab <- h_tab[order(h_tab$clust_shape),]
+
+# xtable(h_tab)
+
 shape_indic <- tab %>% group_by(meth,clust_shape) %>% summarize(#CP1_prec_mean = mean(Prec_2up_M1),
                                                      #CP1_prec_med = median(Prec_2up_M1),
                                                      CP2_prec_mean_up = mean(Prec_up2up_M2),
@@ -210,11 +233,11 @@ g1/g2
 
 g1_ter <- ggplot(data = shape_indic)+geom_line(aes(x = clust_shape,y = Mean_est_over_emp,group = meth,col = as.factor(meth)))+
   xlab("Cluster")+ylab("Empirical coverage (%)")+
-  scale_color_discrete("Method")+ylim(c(5,95))+
+  scale_color_discrete("Method")+ylim(c(5,100))+
   ggtitle("(c)")
 g2_ter <- ggplot(data = shape_indic)+geom_line(aes(x = clust_shape,y = Mean_emp_over_est,group = meth,col = as.factor(meth)))+
   xlab("Cluster")+ylab("Estimated coverage (%)")+
-  scale_color_discrete("Method")+ylim(c(5,95))+
+  scale_color_discrete("Method")+ylim(c(5,100))+
   ggtitle("(d)")
 
 g1_quad <- ggplot(data = shape_indic)+geom_line(aes(x = clust_shape,y = CP2_prec_mean_up_rel*100,group = meth,col = as.factor(meth)))+
@@ -224,11 +247,57 @@ g2_quad <- ggplot(data = shape_indic)+geom_line(aes(x = clust_shape,y = CP2_prec
   xlab("Cluster")+ylab("Mean relative\nlower precision (%)")+scale_color_discrete("Method")+ylim(c(0,50))+
   ggtitle("(f)")
 G <- ((g1|g2)/(g1_quad|g2_quad)/(g1_ter|g2_ter))+
-  plot_layout(guides = "collect")&theme(legend.position = "bottom",text = element_text(size = 7))
+  plot_layout(guides = "collect")&theme(legend.position = "bottom",text = element_text(size = 8))
 
-ggsave(filename = "clustering_results.pdf",plot = G,device = "pdf",width = 8,height = 8)
+ggsave(filename = "clustering_results.pdf",plot = G,device = "pdf",width = 19,height = 12,units = "cm")
 
-# draft code
+# table comparing the length of the navigable section estimated by the model 
+# to the length of the empirical navigable section
+
+load("partsection_wo_constraint.Rdata")
+tab_dist <- table_points
+tab_dist <- st_as_sf(x = tab_dist,coords = c(1,2))
+st_crs(tab_dist) <- 4326
+tab_dist <- st_transform(tab_dist,3035) 
+load("fullsection_w_constraint.Rdata")
+RES <- RES %>% filter(stat == "Est",model_type == "M2",id == "Lower_point")
+RES <- st_zm(x = RES,drop = TRUE)
+comp_points <- comp_points %>% filter(Type == "Low")
+comp_points <- st_transform(comp_points,3035)
+r_l <- data.frame(matrix(NA,ncol = 3,nrow = 18))
+colnames(r_l) <- c("Name","l_emp","l_est")
+r_l$Name <- river_names_cal
+for(i in r_l$Name)
+{
+  pos <- which(tab_dist$name == i)
+  p_e <- comp_points[comp_points$Nom.riv == i,]
+  p_est <- RES[RES$rivers == i,]
+  l_emp <- which.min(st_distance(x = tab_dist$geometry[pos],y = p_e$geometry))
+  l_est <- which.min(st_distance(x = tab_dist$geometry[pos],y = p_est$geometry))
+  r_l$l_emp[which(r_l$Name == i)] <- (length(pos)-l_emp)*100
+  r_l$l_est[which(r_l$Name == i)] <- (length(pos)-l_est)*100
+}
+write.csv2(x = r_l,file = "navi_sec_dist.csv")
+
+
+
+
+#################################################################
+######################## DRAFT CODE #############################  
+#################################################################
+
+# sil <- rep(NA,8)
+# for(i in 2:8)
+# {
+#   res_clust <- fdahclust(x = seq(0,1,length.out = 1000),
+#                          y = M_traj,
+#                          n_clusters = i,
+#                          warping_class = "affine",
+#                          cluster_on_phase = TRUE,
+#                          linkage_criterion = "ward.D2")
+#   sil[i] <- mean(res_clust$silhouettes)
+# }
+
 
 # g1_bis <- ggplot(data = shape_indic)+geom_line(aes(x = clust_shape,y = CP2_prec_med_up,group = meth,col = as.factor(meth)))+
 #   xlab("Cluster")+ylab("Median upper precision (m)")+scale_color_discrete("Method")+ylim(c(27500,200000))+
@@ -412,4 +481,69 @@ ggsave(filename = "clustering_results.pdf",plot = G,device = "pdf",width = 8,hei
 # try <- st_transform(try,crs = 2154)
 # ggplot(data = try)+geom_point(aes(x = st_coordinates(try)[,1],
 #                                  y = st_coordinates(try)[,2],group = L1,col = as.factor(clust)))
+
+# essai <- compare_caps(x = seq(0,1,length.out = 1000),
+# y = M_traj,
+# n_clusters = 1:7,
+# metric = c("l2"),
+# clustering_method = c("hclust-average"),
+# warping_class = c("affine"),
+# centroid_type = c("mean"),
+# cluster_on_phase = TRUE)
+
+
+# river_test <- c()
+# river_dist <- c()
+# for(i in river_names_all[which(!river_names_all %in% river_names_cal)])
+# {
+#   d <- rep(NA,5)
+#   for(j in 1:5)
+#   {
+#     p <- length(SMR[[which(names(SMR) == i)]]$y)
+#     x_c <- res_clust$center_grids[j,]
+#     # pos <- which(x_c >= 0 & x_c <= 1)
+#     # x_c <- x_c[pos]
+#     y_c <- res_clust$center_curves[j,,]
+#     # [pos]
+#     # pos_x_t <- round(p*x_c)
+#     x_t <- seq(0,1,length.out = 1000)
+#     # (pos_x_t/p)
+#     y_t <- SMR[[which(names(SMR) == i)]]$y[round(seq(1,p,length.out = 1000))]
+#     # pos_x_t
+#     d[j] <- fdadist(x = rbind(x_c,x_t),
+#                   y = rbind(y_c,y_t),
+#                   warping_class = "affine",cluster_on_phase = TRUE)
+#   }
+#   river_dist <- rbind(river_dist,d)
+#   cluster <- which.min(d)
+#   river_test <- c(river_test,cluster)
+# }
+# summary(as.factor(river_test))
+# names(river_test) <- river_names_all[which(!river_names_all %in% river_names_cal)]
+# clust_1 <- names(which(river_test == 3))
+# C1 <- c()
+# for(i in clust_1)
+# {
+#   p <- length(SMR[[which(names(SMR) == i)]]$y)
+#   C1 <- rbind(C1,SMR[[which(names(SMR) == i)]]$y[round(seq(1,p,length.out = 1000))])
+# }
+# plot(res_clust$center_grids[1,],res_clust$center_curves[1,,],type = 'l',col = "red")
+# lines(res_clust$center_grids[2,],res_clust$center_curves[2,,],type = 'l',col = "blue")
+# lines(res_clust$center_grids[3,],res_clust$center_curves[3,,],type = 'l',col = "violet")
+# lines(res_clust$center_grids[4,],res_clust$center_curves[4,,],type = 'l',col = "lightgreen")
+# lines(res_clust$center_grids[5,],res_clust$center_curves[5,,],type = 'l',col = "lightblue")
+# lines(seq(0,1,length.out = 1000),C1[1,])
+# lines(seq(0,1,length.out = 1000),C1[2,])
+# lines(seq(0,1,length.out = 1000),C1[3,])
+# lines(seq(0,1,length.out = 1000),C1[4,])
+# lines(seq(0,1,length.out = 1000),C1[5,])
+# lines(seq(0,1,length.out = 1000),C1[6,])
+# lines(seq(0,1,length.out = 1000),C1[7,])
+# lines(seq(0,1,length.out = 1000),C1[8,])
+# 
+# dtwDist(mx = matrix(data = res_clust$center_curves[1,,],nrow = 1),my = matrix(SMR$Adda$y,nrow = 1),)
+# dtwDist(mx = matrix(data = res_clust$center_curves[2,,],nrow = 1),my = matrix(SMR$Adda$y,nrow = 1))
+# dtwDist(mx = matrix(data = res_clust$center_curves[3,,],nrow = 1),my = matrix(SMR$Adda$y,nrow = 1))
+# dtwDist(mx = matrix(data = res_clust$center_curves[4,,],nrow = 1),my = matrix(SMR$Adda$y,nrow = 1))
+# dtwDist(mx = matrix(data = res_clust$center_curves[5,,],nrow = 1),my = matrix(SMR$Adda$y,nrow = 1))
 
