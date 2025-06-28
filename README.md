@@ -30,6 +30,7 @@ There are 5 scripts and 5 folders and each of them which consists in :
 - the shapefile of the riverpoints from the source to the confluence can be found in the partsection_riverpoints folder.
 - the shapefile of the riverpoints from the source to the sea can be found in the fullsection_riverpoints folder. 
 - all the Rdata and csv files produced by partsection_wo_constraint.R, fullsection_wo_constraint.R or fullsection_w_constraint.R are stored in the results folder.
+- finally you will find a docker file fixing the version of R to the 4.5.0 version. All packages version used in this work are listed in the package_version_in_docker.csv file 
 
 #####################################################
 ##### IV. Software used and version information #####
