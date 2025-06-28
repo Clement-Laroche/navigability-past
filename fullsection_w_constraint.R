@@ -170,6 +170,13 @@ for(i in 1:n_rivers)
       res <- as.numeric(round(seg.lm2$psi[p_target,2]/d)+1)
       res_low <- as.numeric(round(confint(seg.lm2)[p_target,2]/d)+1)
       res_up <- as.numeric(round(confint(seg.lm2)[p_target,3]/d)+1)
+      if(any(res_low < 0))
+      {
+        res_low[which(res_low < 0)] <- 1
+      }else if(any(res_up > length(pos)))
+      {
+        res_low[which(res_up > length(pos))] <- length(pos)
+      }
       j <- j+1
     }
     # retrieving the coordinates of this changepoint in table_points

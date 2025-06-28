@@ -1,16 +1,16 @@
-library(udunits2)
-library(sf)
-library(terra)
-library(gridExtra)
-library(tidyr)
-library(dtw)
-library(raster)
-library(xtable)
-library(rlist)
-library(osmdata) 
-library(transport)
-library(data.table)
-library(fda)
+library(udunits2) #
+library(sf) #
+library(terra) #
+library(gridExtra) #
+library(tidyr) #
+library(dtw) #
+library(raster) #
+library(xtable) #
+library(rlist) #
+library(osmdata) #
+library(transport) #
+library(data.table) #
+library(fda) 
 library(fdacluster)
 library(ggplot2)
 library(mcp)
@@ -80,7 +80,13 @@ river_names_all <- unique(RES$rivers)
 
 # creating a table with elevation points of each river located upstream of the highest confluence point 
 
-ntab <- table_points %>% filter(name == river_names_all[1],Z >= conf_points$Z[conf_points$Name == river_names_all[1]])
+if(river_names_all[1] %in% conf_points$Name)
+{
+  ntab <- table_points %>% filter(name == river_names_all[1],Z >= conf_points$Z[conf_points$Name == river_names_all[1]])
+}else
+{
+  ntab <- table_points %>% filter(name == river_names_all[1])
+}
 for(i in river_names_all[-1])
 {
   if(i %in% conf_points$Name)
@@ -119,14 +125,15 @@ for(i in 1:length(river_names_all))
 }
 
 # performing the clustering and formatting the results
-
 res_clust <- fdahclust(x = seq(0,1,length.out = 1000),
                        y = M_traj,
                        n_clusters = 5,
                        warping_class = "affine",
                        cluster_on_phase = TRUE,
-                       linkage_criterion = "ward.D2")
+                       linkage_criterion = "ward.D2",
+                       metric = "normalized_l2")
 summary(as.factor(res_clust$memberships))
+print("Here")
 names(res_clust$memberships) <- river_names_all
 summary(as.factor(res_clust$memberships[names(res_clust$memberships) %in% river_names_cal]))
 
